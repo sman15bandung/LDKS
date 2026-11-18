@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portal Test LDKS SMAN 15 Bandung</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS: baca & ekspor Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        /* Hanya area ujian yang tidak bisa diseleksi/copy */
+        #quiz-container { user-select: none; -webkit-user-select: none; }
+        input, textarea, select { user-select: text; -webkit-user-select: text; }
+        .modal-enter { animation: modalFadeIn 0.3s ease-out forwards; }
+        @keyframes modalFadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        .admin-textarea { font-family: monospace; font-size: 13px; }
+    </style>
+</head>
+<body class="w-full text-gray-800 antialiased overflow-hidden flex flex-col" style="height:100vh;height:100dvh">
+
+    <!-- HEADER -->
+    <header class="bg-blue-800 text-white p-4 shadow-md flex justify-between items-center z-10 relative">
+        <div class="flex items-center gap-3">
+            <div class="bg-white p-1 rounded-full h-10 w-10 flex items-center justify-center font-bold text-blue-800 cursor-pointer select-none" onclick="triggerAdmin()">15</div>
+            <div>
+                <h1 class="font-bold text-lg leading-tight">PORTAL TEST LDKS</h1>
+                <p class="text-xs text-blue-200">SMA Negeri 15 Bandung</p>
+            </div>
+        </div>
+        <div id="timer-display" class="hidden font-mono font-bold text-xl bg-blue-900 px-4 py-1 rounded-lg border border-blue-700">00:00</div>
+        <button id="btn-exit-admin" onclick="logoutAdmin()" class="hidden bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-sm font-bold">Keluar Admin</button>
+    </header>
+
+    <main class="flex-1 flex justify-center items-start sm:items-center p-4 overflow-y-auto relative w-full" id="main-content">
+
+        <!-- 0. PILIH PERAN -->
+        <div id="role-selection" class="bg-white max-w-md w-full rounded-2xl shadow-xl p-8 border border-gray-100 text-center flex flex-col gap-4">
+            <h2 class="text-2xl font-bold text-gray-800 mb-2">Selamat Datang</h2>
+            <p class="text-gray-600 mb-4 text-sm">Silakan masuk ke portal untuk memulai ujian.</p>
+            <button onclick="showStudentLanding()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-md transition-all">
+                MASUK SEBAGAI SISWA
+            </button>
+        </div>
+
+        <!-- 0.5 LOGIN ADMIN -->
+        <div id="admin-login" class="hidden bg-white max-w-sm w-full rounded-2xl shadow-xl p-8 border border-gray-100 text-center">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6">Login Admin</h2>
+            <input type="password" id="admin-pin" placeholder="Password admin" onkeydown="if(event.key==='Enter')loginAdmin()" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-center text-lg mb-4">
+            <button onclick="loginAdmin()" class="w-full bg-gray-800 hover:bg-gray-900 text-white font-bold py-3 rounded-xl shadow-md mb-4">MASUK</button>
+            <button onclick="showRoleSelection()" class="text-sm text-gray-500 hover:text-gray-800 underline">Kembali</button>
+        </div>
+
+        <!-- 0.6 DASHBOARD ADMIN -->
+        <div id="admin-dashboard" class="hidden w-full max-w-5xl h-full flex-col py-2">
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-200 flex-1 flex flex-col overflow-hidden">
+                <div class="flex border-b bg-gray-50 overflow-x-auto whitespace-nowrap">
+                    <button onclick="switchAdminTab('tab-hasil')" id="btn-tab-hasil" class="flex-1 px-4 py-4 font-bold text-blue-600 border-b-2 border-blue-600">Hasil Ujian</button>
+                    <button onclick="switchAdminTab('tab-siswa')" id="btn-tab-siswa" class="flex-1 px-4 py-4 font-bold text-gray-500 hover:text-gray-700">Data Siswa</button>
+                    <button onclick="switchAdminTab('tab-soal')" id="btn-tab-soal" class="flex-1 px-4 py-4 font-bold text-gray-500 hover:text-gray-700">Data Soal</button>
+                    <button onclick="switchAdminTab('tab-set')" id="btn-tab-set" class="flex-1 px-4 py-4 font-bold text-gray-500 hover:text-gray-700">Pengaturan</button>
+                </div>
+
+                <!-- Hasil -->
+                <div id="tab-hasil" class="p-4 sm:p-6 flex-1 overflow-y-auto">
+                    <div class="flex flex-wrap justify-between items-center gap-2 mb-4">
+                        <div>
+                            <h3 class="text-xl font-bold">Daftar Hasil Ujian</h3>
+                            <span class="text-sm text-gray-500" id="total-peserta">Total: 0 peserta</span>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <button onclick="renderResults()" class="bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold py-2 px-3 rounded text-sm">Muat ulang</button>
+                            <button onclick="exportResults()" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-3 rounded text-sm">Unduh Excel</button>
+                            <button onclick="hapusSemuaHasil()" class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-3 rounded text-sm">Hapus semua hasil</button>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto rounded-lg border border-gray-200">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-gray-100 text-gray-700 text-sm">
+                                    <th class="p-3 border-b">Waktu</th>
+                                    <th class="p-3 border-b">Nama Siswa</th>
+                                    <th class="p-3 border-b">Kelas</th>
+                                    <th class="p-3 border-b text-center">Nilai</th>
+                                    <th class="p-3 border-b">Keterangan</th>
+                                    <th class="p-3 border-b"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="results-table-body" class="text-sm"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Siswa -->
+                <div id="tab-siswa" class="p-4 sm:p-6 flex-1 hidden overflow-y-auto">
+                    <h3 class="text-xl font-bold mb-4">Kelola Data Siswa</h3>
+
+                    <div class="mb-4 p-4 border rounded-lg bg-blue-50 border-blue-100">
+                        <h4 class="font-bold text-blue-800 mb-2">Opsi 1: Upload file Excel (.xlsx / .csv)</h4>
+                        <p class="text-sm text-blue-600 mb-3">Kolom A berisi <b>Kelas</b>, kolom B berisi <b>Nama Siswa</b>. Baris judul otomatis dilewati.</p>
+                        <input type="file" id="excel-file" accept=".xlsx, .xls, .csv" onchange="handleExcelUpload(event)" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer">
+                    </div>
+
+                    <div class="mb-4 p-4 border rounded-lg bg-green-50 border-green-100">
+                        <h4 class="font-bold text-green-800 mb-2">Opsi 2: Salin dari Excel lalu tempel</h4>
+                        <p class="text-sm text-green-600 mb-3">Blok kolom Kelas dan Nama di Excel, salin (Ctrl+C), lalu tempel di bawah.</p>
+                        <textarea id="paste-excel" rows="3" placeholder="Tempel data dari Excel di sini..." class="w-full p-3 border rounded border-green-300 focus:ring-green-500 outline-none text-sm mb-2 font-mono"></textarea>
+                        <button onclick="handleTSVPaste()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded text-sm shadow">Tambahkan data</button>
+                    </div>
+
+                    <label class="flex items-start gap-2 mb-6 p-3 border border-red-200 bg-red-50 rounded-lg text-sm text-red-800 cursor-pointer">
+                        <input type="checkbox" id="chk-replace" class="mt-1">
+                        <span><b>Ganti semua data lama.</b> Centang untuk menghapus seluruh siswa yang ada (misalnya data contoh) sebelum mengimpor. Jika tidak dicentang, data baru hanya ditambahkan.</span>
+                    </label>
+
+                    <div class="flex flex-wrap justify-between items-center gap-2 mb-2">
+                        <h4 class="font-bold text-gray-800" id="siswa-summary">Siswa terdaftar</h4>
+                        <button onclick="hapusSemuaSiswa()" class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-3 rounded text-sm">Hapus semua siswa</button>
+                    </div>
+                    <div class="overflow-x-auto rounded-lg border border-gray-200 max-h-80 overflow-y-auto">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-gray-100 text-gray-700 sticky top-0"><tr><th class="p-2">Kelas</th><th class="p-2">Nama</th><th class="p-2">Status</th></tr></thead>
+                            <tbody id="siswa-table-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Soal -->
+                <div id="tab-soal" class="p-4 sm:p-6 flex-1 hidden flex-col overflow-y-auto">
+                    <h3 class="text-xl font-bold mb-2">Kelola Data Soal (format JSON)</h3>
+                    <p class="text-sm text-gray-500 mb-3">Setiap soal: <code>q</code> (pertanyaan), <code>opts</code> (2–5 pilihan), <code>ans</code> (nomor jawaban benar, mulai dari 0). Kunci jawaban tidak dikirim ke perangkat siswa.</p>
+                    <textarea id="editor-soal" class="admin-textarea flex-1 min-h-[300px] w-full p-4 border rounded-lg bg-gray-50 mb-4 focus:ring-2 focus:ring-blue-500 outline-none resize-none"></textarea>
+                    <div class="flex flex-wrap gap-2">
+                        <button onclick="saveQuestionsData()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg">Simpan soal</button>
+                        <button onclick="loadDefaultSoal()" class="bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold py-3 px-4 rounded-lg">Muat contoh soal bawaan</button>
+                    </div>
+                </div>
+
+                <!-- Pengaturan -->
+                <div id="tab-set" class="p-4 sm:p-6 flex-1 hidden overflow-y-auto">
+                    <h3 class="text-xl font-bold mb-4">Pengaturan</h3>
+
+                    <div class="mb-6 p-4 border rounded-lg bg-gray-50 max-w-md">
+                        <h4 class="font-bold mb-3">Ujian</h4>
+                        <label class="block text-sm text-gray-600 mb-1">Durasi (menit)</label>
+                        <input type="number" id="set-durasi" min="1" max="300" class="w-full p-2 border rounded mb-3">
+                        <label class="block text-sm text-gray-600 mb-1">Nilai lulus / KKM</label>
+                        <input type="number" id="set-kkm" min="0" max="100" class="w-full p-2 border rounded mb-3">
+                        <button onclick="saveConfig()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Simpan pengaturan</button>
+                    </div>
+
+                    <div class="p-4 border rounded-lg bg-gray-50 max-w-md">
+                        <h4 class="font-bold mb-3">Ganti password admin</h4>
+                        <input type="password" id="pw-lama" placeholder="Password lama" class="w-full p-2 border rounded mb-2">
+                        <input type="password" id="pw-baru" placeholder="Password baru (min. 6 karakter)" class="w-full p-2 border rounded mb-2">
+                        <input type="password" id="pw-baru2" placeholder="Ulangi password baru" class="w-full p-2 border rounded mb-3">
+                        <button onclick="changePassword()" class="bg-gray-800 hover:bg-gray-900 text-white font-bold py-2 px-4 rounded">Ganti password</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 1. LANDING SISWA -->
+        <div id="landing-page" class="hidden bg-white max-w-2xl w-full rounded-2xl shadow-xl p-6 sm:p-8 border border-gray-100">
+            <button onclick="showRoleSelection()" class="text-sm text-gray-500 hover:text-gray-800 underline mb-4 inline-block">&larr; Kembali</button>
+            <h2 class="text-2xl font-bold text-center mb-6 text-gray-800">Peraturan Ujian</h2>
+
+            <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 rounded-r-lg">
+                <h3 class="font-bold text-yellow-800">MODE UJIAN AMAN AKTIF</h3>
+                <ul class="mt-2 text-sm text-yellow-700 list-disc list-inside space-y-1">
+                    <li>Ujian berjalan dalam mode <b>layar penuh</b> (jika perangkat mendukung).</li>
+                    <li>Dilarang membuka tab baru, aplikasi lain, atau <b>split screen</b>.</li>
+                    <li>Sistem mendeteksi jika Anda meninggalkan layar ujian.</li>
+                    <li>Anda hanya punya <b>1 kali peringatan</b>. Pelanggaran kedua membuat ujian <b>otomatis dikumpulkan</b>.</li>
+                    <li>Memuat ulang halaman dihitung sebagai pelanggaran.</li>
+                    <li>Setiap siswa hanya dapat mengerjakan <b>satu kali</b>.</li>
+                </ul>
+            </div>
+
+            <div class="space-y-4">
+                <select id="student-class" onchange="updateNameList()" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white cursor-pointer">
+                    <option value="" disabled selected>Memuat data kelas...</option>
+                </select>
+                <select id="student-name" disabled class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white disabled:bg-gray-100 disabled:cursor-not-allowed cursor-pointer">
+                    <option value="" disabled selected>Pilih kelas terlebih dahulu</option>
+                </select>
+            </div>
+
+            <button id="btn-start" onclick="startQuiz()" class="mt-8 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg transition-all active:scale-95">
+                SAYA MENGERTI & MULAI UJIAN
+            </button>
+        </div>
+
+        <!-- 2. UJIAN -->
+        <div id="quiz-container" class="hidden w-full max-w-3xl h-full flex-col pt-2 pb-4">
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-5 md:p-8 flex-1 flex flex-col relative min-h-0">
+                <div class="mb-5 flex justify-between items-center">
+                    <span class="text-sm font-semibold text-gray-500 uppercase tracking-wider" id="question-counter">Soal 1</span>
+                    <div class="w-1/2 bg-gray-200 rounded-full h-2.5">
+                        <div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style="width: 4%"></div>
+                    </div>
+                </div>
+                <div class="mb-6">
+                    <h2 id="question-text" class="text-lg md:text-2xl font-medium text-gray-900 leading-snug">Memuat pertanyaan...</h2>
+                </div>
+                <div id="options-container" class="space-y-3 flex-1 overflow-y-auto pr-1"></div>
+                <div class="mt-6 pt-5 border-t border-gray-100 flex justify-between items-center">
+                    <button id="btn-prev" onclick="navigate(-1)" class="px-5 py-2.5 text-gray-600 font-medium hover:bg-gray-100 rounded-lg invisible">&larr; Sebelumnya</button>
+                    <button id="btn-next" onclick="navigate(1)" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow">Selanjutnya &rarr;</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. HASIL -->
+        <div id="result-page" class="hidden bg-white max-w-lg w-full rounded-2xl shadow-xl p-8 border border-gray-100 text-center">
+            <div class="inline-flex items-center justify-center w-20 h-20 bg-green-100 rounded-full mb-6">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+            </div>
+            <h2 class="text-3xl font-bold text-gray-800 mb-2">Ujian Selesai!</h2>
+            <p class="text-gray-500 mb-6" id="result-student-info">Nama - Kelas</p>
+            <div class="bg-blue-50 p-6 rounded-xl border border-blue-100 mb-4">
+                <p class="text-sm text-blue-600 font-bold uppercase tracking-wider mb-1">Nilai Anda</p>
+                <p class="text-5xl font-black text-blue-800" id="final-score">…</p>
+            </div>
+            <p class="text-sm text-gray-600 mb-6" id="result-status"></p>
+            <button id="btn-retry" onclick="sendResult()" class="hidden mb-3 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">Kirim ulang jawaban</button>
+            <div><button onclick="showRoleSelection()" class="px-6 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg font-medium">Kembali ke awal</button></div>
+        </div>
+    </main>
+
+    <!-- MODAL -->
+    <div id="custom-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden justify-center items-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl modal-enter text-center">
+            <div id="modal-icon" class="mx-auto w-16 h-16 rounded-full flex items-center justify-center mb-4 bg-red-100 text-red-600">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            </div>
+            <h3 id="modal-title" class="text-xl font-bold text-gray-900 mb-2">Peringatan</h3>
+            <p id="modal-desc" class="text-gray-600 mb-6 whitespace-pre-line">Pesan</p>
+            <div class="flex gap-2">
+                <button id="modal-cancel" onclick="closeModal(true)" class="hidden flex-1 py-3 px-4 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-medium">Batal</button>
+                <button id="modal-btn" onclick="closeModal()" class="flex-1 py-3 px-4 bg-gray-900 hover:bg-gray-800 text-white rounded-xl font-medium">Mengerti</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- LOADER -->
+    <div id="loader" class="fixed inset-0 bg-white/60 z-[60] hidden justify-center items-center">
+        <div class="bg-white shadow-lg rounded-xl px-6 py-4 text-sm font-semibold text-gray-700 border">Memproses…</div>
+    </div>
+
+<script>
+// =====================================================================
+// 1. KONFIGURASI SUPABASE  — isi dua baris ini
+//    Supabase > Project Settings > API > Project URL & anon/publishable key
+// =====================================================================
+const SUPABASE_URL = "https://sfzvvbcwtvdjprankcjz.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNmenZ2YmN3dHZkanByYW5rY2p6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUwMjUzODQsImV4cCI6MjExMDYwMTM4NH0.Qfsg0WKoIY-PqMu9LMl6V9rvwpNwA6Ir2xxf7T429mY";
+
+// =====================================================================
+// 2. CONTOH SOAL BAWAAN (hanya dipakai tombol "Muat contoh soal bawaan")
+// =====================================================================
+const DEFAULT_SOAL = [
+    { q: "Ada berapa program unggulan di SMAN 15 Bandung?", opts: ["4", "5", "6", "7", "8"], ans: 2 },
+    { q: "Dalam program literasi sekolah, setiap murid ditargetkan membaca minimal... buku dalam satu tahun.", opts: ["12", "20", "24", "27", "30"], ans: 3 },
+    { q: "Dalam program SMS Baksos, singkatan \"SMS\" adalah ...", opts: ["Sumbangan Murid Sukarela", "Sedekah Minimal Seribu", "Satu Murid Satu Sedekah", "Sedekah Mingguan Sekolah", "Sedekah Murid Sekolah"], ans: 1 },
+    { q: "Program yang sebaiknya dijalankan pada tahun 2027 untuk mendukung program Sekolah Bebas Sampah adalah ...", opts: ["Kelas Hijau", "Bendera Apresiasi", "Piala Bergilir Kebersihan", "Jumat Bersih", "Kelas Berseri"], ans: 1 },
+    { q: "Untuk mendukung program sekolah, sebaiknya setiap kelas memiliki minimal ... akun saham.", opts: ["1", "2", "3", "5", "10"], ans: 2 },
+    { q: "Pada tahun 2026, berapa persen murid yang melakukan scan barcode salat Duha?", opts: ["12%", "28%", "50%", "75%", "90%"], ans: 1 },
+    { q: "Apa masalah utama program Wirausaha Digital pada tahun 2026?", opts: ["modal usaha murid terlalu kecil", "tidak ada tempat berjualan di sekolah", "murid pelaku usaha belum terdata dan konten promosinya kurang menarik", "produk murid tidak laku dijual", "tidak ada guru pembina"], ans: 2 },
+    { q: "Manakah yang BUKAN termasuk program unggulan SMAN 15 Bandung?", opts: ["Nabung Saham", "Wirausaha Digital", "Sekolah Bebas Sampah", "Bersepeda ke Sekolah", "SMS Baksos"], ans: 3 },
+    { q: "Sarana yang sebaiknya ada di setiap kelas untuk mendukung program literasi adalah", opts: ["perpustakaan digital", "mading literasi", "taman baca", "klub buku", "pojok baca"], ans: 4 },
+    { q: "Menurut hasil evaluasi, masalah utama program SMS pada tahun 2026 adalah", opts: ["banyak murid menolak menyumbang", "celengan kelas sering hilang", "dana kurang transparan dan alur penyalurannya belum jelas", "tidak ada kegiatan bakti sosial", "nominal sumbangan terlalu besar"], ans: 2 },
+    { q: "Strategi yang sebaiknya dilakukan agar seluruh murid melakukan scan barcode salat Duha adalah ...", opts: ["salat Duha dilaksanakan di kelas masing-masing", "wali kelas memeriksa scan barcode setiap hari Jumat", "murid yang tidak scan dikenai poin pelanggaran", "guru mata pelajaran pertama memeriksa bukti scan barcode salat Duha saat presensi", "ketua kelas mengumpulkan ponsel murid"], ans: 3 },
+    { q: "Berapa target omzet usaha murid yang sebaiknya ditetapkan pada tahun 2027 untuk mendukung program Wirausaha Digital?", opts: ["Rp5.000.000", "Rp10.000.000", "Rp15.000.000", "Rp25.000.000", "Rp50.000.000"], ans: 2 },
+    { q: "Apa kendala utama murid untuk membuka akun saham?", opts: ["tidak memiliki ponsel", "biaya pembukaan akun mahal", "tidak diizinkan orang tua", "belum memiliki KTP", "tidak ada guru pendamping"], ans: 3 },
+    { q: "Salah satu masalah sampah yang ditemukan di sekolah adalah wadah bekas kantin yang", opts: ["dibuang ke tempat sampah organik", "tidak dikembalikan dan hanya ditaruh di wastafel", "dibawa pulang oleh murid", "ditumpuk di depan kelas", "dibuang ke selokan"], ans: 1 },
+    { q: "Pasangan komisi dan program unggulan yang tepat adalah", opts: ["Komisi A - Nabung Saham", "Komisi C - Wirausaha Digital", "Komisi D - Sekolah Bebas Sampah", "Komisi A - SMS Baksos", "Komisi E - Literasi"], ans: 3 },
+    { q: "Sebaiknya seberapa sering evaluasi program Wirausaha Digital dilakukan?", opts: ["2 bulan sekali", "setiap minggu", "setiap bulan", "setiap semester", "setahun sekali"], ans: 0 },
+    { q: "Berapa target pemasukan dana SMS yang sebaiknya ditetapkan untuk tahun 2027?", opts: ["Rp15.000.000", "Rp25.000.000", "Rp30.000.000", "Rp50.000.000", "Rp100.000.000"], ans: 3 },
+    { q: "Apa penyebab salat Zuhur murid belum tepat waktu?", opts: ["jadwal pembelajaran dan jadwal MBG bentrok dengan waktu Zuhur", "musala terlalu kecil", "tidak ada imam", "murid pulang lebih awal", "azan Zuhur tidak terdengar di kelas"], ans: 0 },
+    { q: "Pada tahun 2026, persentase murid yang memahami saham diperkirakan baru sekitar", opts: ["1-5%", "5-10%", "10-20%", "25-30%", "50%"], ans: 1 },
+    { q: "Dana SMS dikumpulkan setiap hari di seluruh kelas. Sebaiknya pengumpulan dan pendataan dana SMS dari seluruh kelas dilakukan", opts: ["setiap minggu", "setiap hari", "setiap bulan", "setiap semester", "setahun sekali"], ans: 0 },
+    { q: "Implementasi nilai Persatuan Indonesia (Sila ke-3) dalam kehidupan lingkungan sekolah dapat diwujudkan melalui tindakan ...", opts: ["Bergaul tanpa membedakan suku, agama, ras, dan antargolongan", "Memaksakan kehendak pada teman diskusi", "Hanya berteman dengan yang memiliki kesamaan latar belakang", "Menghindari kegiatan upacara bendera hari Senin", "Mengutamakan kepentingan pribadi di atas kepentingan kelompok"], ans: 0 },
+    { q: "Salah satu fungsi Pancasila sebagai pandangan hidup bangsa Indonesia adalah ...", opts: ["Menjadi alat kekuasaan bagi pemerintah pusat", "Menjadi pedoman perilaku dan karakter sehari-hari", "Sebagai lambang negara yang dipajang semata", "Menggantikan seluruh sistem hukum yang ada di Indonesia", "Membatasi kebebasan berpendapat warga negara"], ans: 1 },
+    { q: "Ancaman terhadap integrasi nasional yang berasal dari dalam negeri dan berpotensi memecah belah persatuan di era digital saat ini adalah ...", opts: ["Investasi asing yang masuk ke dalam negeri", "Penyebaran ujaran kebencian dan hoaks di media sosial", "Masuknya budaya asing melalui film dan musik", "Kurangnya lapangan pekerjaan di sektor formal", "Pertukaran pelajar dan mahasiswa antar negara"], ans: 1 },
+    { q: "Makna semboyan Bhinneka Tunggal Ika dalam konteks Negara Kesatuan Republik Indonesia memberikan pesan kuat bahwa ...", opts: ["Keseragaman adalah hal yang mutlak dicapai", "Keberagaman merupakan kekuatan yang mengikat persatuan", "Perbedaan harus dihilangkan perlahan demi stabilitas", "Budaya daerah harus ditinggalkan menuju budaya nasional", "Mayoritas memiliki hak mendominasi kaum minoritas"], ans: 1 },
+    { q: "Menurut UUD 1945 Pasal 1 ayat (1), bentuk negara Indonesia secara konstitusional ditetapkan sebagai ...", opts: ["Negara kesatuan yang berbentuk republik", "Negara serikat yang berbentuk republik", "Negara kesatuan yang berbentuk monarki", "Negara serikat yang berbentuk parlementer", "Negara persemakmuran jajahan"], ans: 0 }
+];
+
+// =====================================================================
+// 3. STATE & UTIL
+// =====================================================================
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+let questions = [];           // soal untuk siswa (tanpa kunci)
+let studentRows = [];         // [{id,kelas,nama,selesai}]
+let config = { durasi: 30, kkm: 70 };
+let exam = null;              // {id,nama,kelas}
+let currentIdx = 0, userAnswers = [], endAt = 0, timerInterval = null;
+let isQuizActive = false, warningsLeft = 1, pendingForce = false;
+let violationLock = false, lastViolation = 0, listenersReady = false;
+let adminPass = null, adminResults = [];
+let modalCallback = null;
+
+const fsSupported = !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
+const isFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+async function enterFullscreen() {
+    const el = document.documentElement;
+    if (el.requestFullscreen) await el.requestFullscreen();
+    else if (el.webkitRequestFullscreen) await el.webkitRequestFullscreen();
+}
+function leaveFullscreen() {
+    try {
+        if (!isFullscreen()) return;
+        const p = document.exitFullscreen ? document.exitFullscreen() : document.webkitExitFullscreen();
+        if (p && p.catch) p.catch(() => {});
+    } catch (e) {}
+}
+
+// Panggilan ke fungsi Supabase (RPC)
+async function rpc(fn, args = {}) {
+    if (SUPABASE_URL.includes('XXXX') || SUPABASE_KEY.startsWith('ISI_')) {
+        throw new Error('Supabase belum dikonfigurasi. Isi SUPABASE_URL dan SUPABASE_KEY di bagian atas script.');
+    }
+    const headers = { 'Content-Type': 'application/json', apikey: SUPABASE_KEY };
+    if (SUPABASE_KEY.startsWith('eyJ')) headers.Authorization = 'Bearer ' + SUPABASE_KEY;
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, { method: 'POST', headers, body: JSON.stringify(args) });
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch (e) { data = text; }
+    if (!res.ok) throw new Error((data && data.message) || 'Gagal terhubung ke server');
+    return data;
+}
+
+async function withLoader(fn) {
+    $('loader').classList.remove('hidden'); $('loader').classList.add('flex');
+    try { return await fn(); }
+    finally { $('loader').classList.add('hidden'); $('loader').classList.remove('flex'); }
+}
+
+// Modal. opts: {onOk, type:'warn'|'danger'|'success', confirm:bool, okText}
+function showModal(title, desc, opts = {}) {
+    $('modal-title').innerText = title;
+    $('modal-desc').innerText = desc;
+    modalCallback = opts.onOk || null;
+    const colors = { danger: 'bg-red-100 text-red-600', success: 'bg-green-100 text-green-600', warn: 'bg-yellow-100 text-yellow-600' };
+    $('modal-icon').className = 'mx-auto w-16 h-16 rounded-full flex items-center justify-center mb-4 ' + colors[opts.type || 'warn'];
+    $('modal-cancel').classList.toggle('hidden', !opts.confirm);
+    $('modal-btn').innerText = opts.okText || 'Mengerti';
+    $('custom-modal').classList.remove('hidden'); $('custom-modal').classList.add('flex');
+}
+function closeModal(cancelled = false) {
+    $('custom-modal').classList.add('hidden'); $('custom-modal').classList.remove('flex');
+    const cb = modalCallback; modalCallback = null;
+    if (!cancelled && cb) cb();
+}
+
+// =====================================================================
+// 4. NAVIGASI HALAMAN
+// =====================================================================
+let adminClickCount = 0, adminClickTimer = null;
+function triggerAdmin() {
+    adminClickCount++;
+    clearTimeout(adminClickTimer);
+    if (adminClickCount >= 3) { adminClickCount = 0; if (!isQuizActive) showAdminLogin(); }
+    else adminClickTimer = setTimeout(() => { adminClickCount = 0; }, 1000);
+}
+function hideAllPages() {
+    ['role-selection','admin-login','admin-dashboard','landing-page','quiz-container','result-page'].forEach(id => {
+        $(id).classList.add('hidden'); $(id).classList.remove('flex');
+    });
+    $('btn-exit-admin').classList.add('hidden');
+    $('timer-display').classList.add('hidden');
+}
+function showRoleSelection() { hideAllPages(); $('role-selection').classList.remove('hidden'); }
+function showAdminLogin() { hideAllPages(); $('admin-login').classList.remove('hidden'); $('admin-pin').value = ''; }
+async function showStudentLanding() {
+    hideAllPages(); $('landing-page').classList.remove('hidden');
+    $('student-class').innerHTML = '<option value="" disabled selected>Memuat data kelas...</option>';
+    $('student-name').innerHTML = '<option value="" disabled selected>Pilih kelas terlebih dahulu</option>';
+    $('student-name').disabled = true;
+    try {
+        studentRows = await rpc('ldks_get_siswa') || [];
+        initStudentDropdowns();
+    } catch (e) {
+        $('student-class').innerHTML = '<option value="" disabled selected>Gagal memuat</option>';
+        showModal('Gagal memuat data', e.message, { type: 'danger' });
+    }
+}
+
+// =====================================================================
+// 5. ADMIN
+// =====================================================================
+async function loginAdmin() {
+    const pass = $('admin-pin').value;
+    if (!pass) return showModal('Login gagal', 'Password belum diisi.');
+    try {
+        const ok = await withLoader(() => rpc('ldks_admin_login', { p_pass: pass }));
+        if (!ok) return showModal('Login gagal', 'Password yang Anda masukkan salah.');
+        adminPass = pass;
+        hideAllPages();
+        $('admin-dashboard').classList.remove('hidden'); $('admin-dashboard').classList.add('flex');
+        $('btn-exit-admin').classList.remove('hidden');
+        switchAdminTab('tab-hasil');
+    } catch (e) { showModal('Login gagal', e.message, { type: 'danger' }); }
+}
+function logoutAdmin() { adminPass = null; showRoleSelection(); }
+
+const ADMIN_TABS = ['tab-hasil', 'tab-siswa', 'tab-soal', 'tab-set'];
+function switchAdminTab(tabId) {
+    ADMIN_TABS.forEach(id => {
+        $(id).classList.add('hidden'); $(id).classList.remove('flex');
+        $('btn-' + id).classList.remove('text-blue-600', 'border-b-2', 'border-blue-600');
+        $('btn-' + id).classList.add('text-gray-500');
+    });
+    $(tabId).classList.remove('hidden');
+    if (tabId === 'tab-soal') $(tabId).classList.add('flex');
+    $('btn-' + tabId).classList.add('text-blue-600', 'border-b-2', 'border-blue-600');
+    $('btn-' + tabId).classList.remove('text-gray-500');
+    if (tabId === 'tab-hasil') renderResults();
+    if (tabId === 'tab-siswa') loadSiswaAdmin();
+    if (tabId === 'tab-soal') loadSoalAdmin();
+    if (tabId === 'tab-set') loadConfigAdmin();
+}
+
+// --- Hasil ---
+async function renderResults() {
+    const tbody = $('results-table-body');
+    try {
+        adminResults = await withLoader(() => rpc('ldks_admin_hasil', { p_pass: adminPass })) || [];
+    } catch (e) { return showModal('Gagal memuat hasil', e.message, { type: 'danger' }); }
+    $('total-peserta').innerText = `Total: ${adminResults.length} peserta`;
+    if (!adminResults.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-gray-500">Belum ada hasil ujian.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = adminResults.map(r => `
+        <tr class="border-b hover:bg-gray-50">
+            <td class="p-3 whitespace-nowrap">${esc(new Date(r.created_at).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' }))}</td>
+            <td class="p-3 font-medium">${esc(r.nama)}</td>
+            <td class="p-3">${esc(r.kelas)}</td>
+            <td class="p-3 text-center font-bold ${r.nilai >= config.kkm ? 'text-green-600' : 'text-red-600'}">${r.nilai}</td>
+            <td class="p-3 text-xs ${r.paksa ? 'text-red-600 font-semibold' : 'text-gray-500'}">${r.paksa ? 'Disubmit paksa' : `Benar ${r.benar}/${r.total}`}</td>
+            <td class="p-3 text-right"><button onclick="hapusHasil(${Number(r.id)})" class="text-xs text-red-600 hover:underline whitespace-nowrap">Reset (boleh ulang)</button></td>
+        </tr>`).join('');
+}
+function hapusHasil(id) {
+    const r = adminResults.find(x => x.id === id); if (!r) return;
+    showModal('Reset hasil siswa?', `Hasil ${r.nama} (${r.kelas}) akan dihapus dan siswa dapat mengerjakan ulang.`, {
+        confirm: true, okText: 'Ya, reset', type: 'danger',
+        onOk: async () => {
+            try { await withLoader(() => rpc('ldks_admin_hapus_hasil', { p_pass: adminPass, p_id: id })); renderResults(); }
+            catch (e) { showModal('Gagal', e.message, { type: 'danger' }); }
+        }
+    });
+}
+function hapusSemuaHasil() {
+    showModal('Hapus SEMUA hasil?', 'Seluruh hasil ujian akan dihapus permanen. Unduh Excel dulu jika masih dibutuhkan.', {
+        confirm: true, okText: 'Ya, hapus semua', type: 'danger',
+        onOk: async () => {
+            try { await withLoader(() => rpc('ldks_admin_hapus_semua_hasil', { p_pass: adminPass })); renderResults(); }
+            catch (e) { showModal('Gagal', e.message, { type: 'danger' }); }
+        }
+    });
+}
+function exportResults() {
+    if (!adminResults.length) return showModal('Kosong', 'Belum ada hasil untuk diunduh.');
+    const rows = adminResults.map(r => ({
+        Waktu: new Date(r.created_at).toLocaleString('id-ID'),
+        Nama: r.nama, Kelas: r.kelas, Nilai: r.nilai, Benar: r.benar, 'Jumlah Soal': r.total,
+        Keterangan: r.paksa ? 'Disubmit paksa' : ''
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Hasil LDKS');
+    XLSX.writeFile(wb, 'hasil_test_ldks.xlsx');
+}
+
+// --- Siswa ---
+async function loadSiswaAdmin() {
+    try {
+        const rows = await withLoader(() => rpc('ldks_get_siswa')) || [];
+        const kelasSet = new Set(rows.map(r => r.kelas));
+        $('siswa-summary').innerText = `Siswa terdaftar: ${rows.length} orang di ${kelasSet.size} kelas`;
+        $('siswa-table-body').innerHTML = rows.length
+            ? rows.map(r => `<tr class="border-t"><td class="p-2">${esc(r.kelas)}</td><td class="p-2">${esc(r.nama)}</td><td class="p-2 text-xs ${r.selesai ? 'text-green-600' : 'text-gray-400'}">${r.selesai ? 'Sudah mengerjakan' : 'Belum'}</td></tr>`).join('')
+            : '<tr><td colspan="3" class="p-4 text-center text-gray-500">Belum ada siswa. Upload atau tempel data di atas.</td></tr>';
+    } catch (e) { showModal('Gagal memuat siswa', e.message, { type: 'danger' }); }
+}
+function parseRows(rows) {
+    const out = [];
+    for (const row of rows) {
+        if (!row || row.length < 2) continue;
+        const kelas = String(row[0] ?? '').trim(), nama = String(row[1] ?? '').trim();
+        if (!kelas || !nama) continue;
+        if (kelas.toLowerCase() === 'kelas' || nama.toLowerCase() === 'nama') continue;
+        out.push({ kelas, nama });
+    }
+    return out;
+}
+function handleExcelUpload(event) {
+    const file = event.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+        try {
+            const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+            const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+            event.target.value = '';
+            importSiswa(parseRows(rows));
+        } catch (err) { showModal('Gagal', 'Tidak dapat membaca file. Pastikan file tidak rusak.', { type: 'danger' }); }
+    };
+    reader.readAsArrayBuffer(file);
+}
+function handleTSVPaste() {
+    const text = $('paste-excel').value;
+    if (!text.trim()) return showModal('Kosong', 'Tempel data dari Excel terlebih dahulu.');
+    const rows = text.trim().split(/\r?\n/).map(r => r.split('\t'));
+    importSiswa(parseRows(rows), () => { $('paste-excel').value = ''; });
+}
+function importSiswa(list, done) {
+    if (!list.length) return showModal('Tidak ada data', 'Tidak ditemukan baris dengan Kelas di kolom A dan Nama di kolom B.');
+    const replace = $('chk-replace').checked;
+    const go = async () => {
+        try {
+            const n = await withLoader(() => rpc('ldks_admin_import_siswa', { p_pass: adminPass, p_rows: list, p_replace: replace }));
+            if (done) done();
+            $('chk-replace').checked = false;
+            showModal('Berhasil', `${n} siswa baru tersimpan.`, { type: 'success' });
+            loadSiswaAdmin();
+        } catch (e) { showModal('Gagal', e.message, { type: 'danger' }); }
+    };
+    if (replace) {
+        showModal('Ganti semua data siswa?', `Semua siswa lama akan dihapus dan diganti dengan ${list.length} baris baru.`, { confirm: true, okText: 'Ya, ganti', type: 'danger', onOk: go });
+    } else go();
+}
+function hapusSemuaSiswa() {
+    showModal('Hapus semua siswa?', 'Seluruh data siswa akan dihapus (hasil ujian yang sudah masuk tetap tersimpan).', {
+        confirm: true, okText: 'Ya, hapus', type: 'danger',
+        onOk: async () => {
+            try { await withLoader(() => rpc('ldks_admin_hapus_siswa', { p_pass: adminPass })); loadSiswaAdmin(); }
+            catch (e) { showModal('Gagal', e.message, { type: 'danger' }); }
+        }
+    });
+}
+
+// --- Soal ---
+async function loadSoalAdmin() {
+    try {
+        const rows = await withLoader(() => rpc('ldks_admin_get_soal', { p_pass: adminPass })) || [];
+        $('editor-soal').value = JSON.stringify(rows.map(r => ({ q: r.q, opts: r.opts, ans: r.ans })), null, 2);
+    } catch (e) { showModal('Gagal memuat soal', e.message, { type: 'danger' }); }
+}
+function loadDefaultSoal() {
+    $('editor-soal').value = JSON.stringify(DEFAULT_SOAL, null, 2);
+    showModal('Contoh soal dimuat', 'Soal bawaan sudah masuk ke editor. Klik "Simpan soal" untuk menyimpannya ke database.', { type: 'success' });
+}
+function validateSoal(arr) {
+    if (!Array.isArray(arr) || !arr.length) throw new Error('Soal harus berupa daftar [ ... ] dan tidak boleh kosong.');
+    arr.forEach((s, i) => {
+        if (!s || typeof s.q !== 'string' || !s.q.trim()) throw new Error(`Soal ${i + 1}: teks soal (q) kosong.`);
+        if (!Array.isArray(s.opts) || s.opts.length < 2 || s.opts.length > 5) throw new Error(`Soal ${i + 1}: opts harus berisi 2–5 pilihan.`);
+        if (!Number.isInteger(s.ans) || s.ans < 0 || s.ans >= s.opts.length) throw new Error(`Soal ${i + 1}: ans harus angka 0–${s.opts.length - 1}.`);
+    });
+}
+async function saveQuestionsData() {
+    let arr;
+    try { arr = JSON.parse($('editor-soal').value); validateSoal(arr); }
+    catch (e) { return showModal('Soal tidak valid', e instanceof SyntaxError ? 'Format JSON salah. Periksa tanda kutip, koma, dan kurung.' : e.message, { type: 'danger' }); }
+    try {
+        const clean = arr.map(s => ({ q: s.q.trim(), opts: s.opts.map(String), ans: s.ans }));
+        const n = await withLoader(() => rpc('ldks_admin_save_soal', { p_pass: adminPass, p_soal: clean }));
+        showModal('Berhasil', `${n} soal tersimpan.`, { type: 'success' });
+    } catch (e) { showModal('Gagal menyimpan', e.message, { type: 'danger' }); }
+}
+
+// --- Pengaturan ---
+async function loadConfigAdmin() {
+    try {
+        config = await withLoader(() => rpc('ldks_get_config'));
+        $('set-durasi').value = config.durasi; $('set-kkm').value = config.kkm;
+    } catch (e) { showModal('Gagal memuat pengaturan', e.message, { type: 'danger' }); }
+}
+async function saveConfig() {
+    const durasi = parseInt($('set-durasi').value, 10), kkm = parseInt($('set-kkm').value, 10);
+    if (!(durasi >= 1 && durasi <= 300)) return showModal('Tidak valid', 'Durasi harus 1–300 menit.');
+    if (!(kkm >= 0 && kkm <= 100)) return showModal('Tidak valid', 'KKM harus 0–100.');
+    try {
+        await withLoader(() => rpc('ldks_admin_save_config', { p_pass: adminPass, p_durasi: durasi, p_kkm: kkm }));
+        config = { durasi, kkm };
+        showModal('Berhasil', 'Pengaturan tersimpan.', { type: 'success' });
+    } catch (e) { showModal('Gagal', e.message, { type: 'danger' }); }
+}
+async function changePassword() {
+    const lama = $('pw-lama').value, baru = $('pw-baru').value, baru2 = $('pw-baru2').value;
+    if (!lama || !baru) return showModal('Belum lengkap', 'Isi password lama dan password baru.');
+    if (baru.length < 6) return showModal('Terlalu pendek', 'Password baru minimal 6 karakter.');
+    if (baru !== baru2) return showModal('Tidak cocok', 'Pengulangan password baru tidak sama.');
+    try {
+        await withLoader(() => rpc('ldks_admin_ganti_password', { p_lama: lama, p_baru: baru }));
+        adminPass = baru;
+        ['pw-lama', 'pw-baru', 'pw-baru2'].forEach(id => $(id).value = '');
+        showModal('Berhasil', 'Password admin sudah diganti.', { type: 'success' });
+    } catch (e) { showModal('Gagal', e.message, { type: 'danger' }); }
+}
+
+// =====================================================================
+// 6. SISWA & UJIAN
+// =====================================================================
+function initStudentDropdowns() {
+    const sel = $('student-class');
+    const classes = [...new Set(studentRows.map(r => r.kelas))].sort((a, b) => a.localeCompare(b, 'id', { numeric: true }));
+    sel.innerHTML = classes.length
+        ? '<option value="" disabled selected>Pilih Kelas</option>'
+        : '<option value="" disabled selected>Data siswa belum tersedia</option>';
+    classes.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o); });
+    updateNameList();
+}
+function updateNameList() {
+    const cls = $('student-class').value, nameSel = $('student-name');
+    if (!cls) { nameSel.innerHTML = '<option value="" disabled selected>Pilih kelas terlebih dahulu</option>'; nameSel.disabled = true; return; }
+    nameSel.innerHTML = '<option value="" disabled selected>Pilih Nama</option>';
+    studentRows.filter(r => r.kelas === cls).sort((a, b) => a.nama.localeCompare(b.nama, 'id')).forEach(r => {
+        const o = document.createElement('option');
+        o.value = r.id;
+        o.textContent = r.nama + (r.selesai ? ' (sudah mengerjakan)' : '');
+        o.disabled = !!r.selesai;
+        nameSel.appendChild(o);
+    });
+    nameSel.disabled = false;
+}
+
+async function startQuiz() {
+    const id = Number($('student-name').value);
+    const row = studentRows.find(r => r.id === id);
+    if (!row) return showModal('Data belum lengkap', 'Pilih Kelas dan Nama Anda terlebih dahulu.');
+
+    // Ambil soal & pengaturan terbaru
+    try {
+        await withLoader(async () => {
+            const [soal, cfg] = await Promise.all([rpc('ldks_get_soal'), rpc('ldks_get_config')]);
+            questions = (soal || []).map(s => ({ q: s.q, opts: s.opts }));
+            config = cfg;
+        });
+    } catch (e) { return showModal('Gagal memuat soal', e.message, { type: 'danger' }); }
+    if (!questions.length) return showModal('Soal belum tersedia', 'Hubungi pengawas/guru. Soal belum diisi oleh admin.');
+
+    // Layar penuh: wajib jika perangkat mendukung; iPhone tidak mendukung, jadi dilewati
+    if (fsSupported) {
+        try { await enterFullscreen(); }
+        catch (err) { return showModal('Gagal memulai', 'Browser tidak mengizinkan mode layar penuh. Izinkan layar penuh lalu coba lagi.'); }
+    }
+
+    exam = { id: row.id, nama: row.nama, kelas: row.kelas };
+    userAnswers = new Array(questions.length).fill(null);
+    endAt = Date.now() + config.durasi * 60 * 1000;
+    warningsLeft = 1; pendingForce = false; violationLock = false; lastViolation = Date.now();
+    beginQuiz(0);
+}
+
+function beginQuiz(idx) {
+    isQuizActive = true;
+    hideAllPages();
+    $('quiz-container').classList.remove('hidden'); $('quiz-container').classList.add('flex');
+    $('timer-display').classList.remove('hidden');
+    $('result-student-info').innerText = `${exam.nama} - ${exam.kelas}`;
+    setupAntiCheat();
+    startTimer();
+    loadQuestion(idx);
+    saveSession();
+}
+
+function loadQuestion(index) {
+    currentIdx = index;
+    const q = questions[index];
+    $('question-counter').innerText = `Soal ${index + 1} dari ${questions.length}`;
+    $('progress-bar').style.width = `${((index + 1) / questions.length) * 100}%`;
+    $('question-text').innerText = q.q;
+    const box = $('options-container'); box.innerHTML = '';
+    const labels = ['A', 'B', 'C', 'D', 'E'];
+    q.opts.forEach((text, i) => {
+        const sel = userAnswers[index] === i;
+        const div = document.createElement('div');
+        div.className = `p-4 border rounded-xl cursor-pointer transition-all flex gap-4 items-center group ${sel ? 'bg-blue-50 border-blue-500 shadow-sm' : 'bg-white border-gray-200 hover:border-blue-300 hover:bg-gray-50'}`;
+        div.onclick = () => selectOption(i);
+        div.innerHTML = `
+            <div class="w-8 h-8 min-w-[2rem] rounded-full border-2 flex items-center justify-center font-bold text-sm ${sel ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-300 text-gray-500 group-hover:border-blue-400'}">${labels[i]}</div>
+            <div class="flex-1 text-gray-700 font-medium text-sm md:text-base">${esc(text)}</div>`;
+        box.appendChild(div);
+    });
+    $('btn-prev').style.visibility = index === 0 ? 'hidden' : 'visible';
+    const next = $('btn-next');
+    if (index === questions.length - 1) {
+        next.innerText = 'SELESAI & KUMPULKAN';
+        next.classList.remove('bg-blue-600', 'hover:bg-blue-700'); next.classList.add('bg-green-600', 'hover:bg-green-700');
+    } else {
+        next.innerHTML = 'Selanjutnya &rarr;';
+        next.classList.add('bg-blue-600', 'hover:bg-blue-700'); next.classList.remove('bg-green-600', 'hover:bg-green-700');
+    }
+    saveSession();
+}
+function selectOption(i) { userAnswers[currentIdx] = i; loadQuestion(currentIdx); }
+function navigate(dir) {
+    if (dir === 1 && currentIdx === questions.length - 1) {
+        const unanswered = userAnswers.filter(a => a === null).length;
+        showModal('Kumpulkan jawaban?',
+            unanswered ? `Masih ada ${unanswered} soal yang belum dijawab. Yakin ingin mengumpulkan?` : 'Semua soal sudah dijawab. Kumpulkan sekarang?',
+            { confirm: true, okText: 'Ya, kumpulkan', onOk: () => finishQuiz(false) });
+        return;
+    }
+    const n = currentIdx + dir;
+    if (n >= 0 && n < questions.length) loadQuestion(n);
+}
+
+// --- Timer (berbasis waktu akhir, tahan terhadap throttling browser) ---
+function startTimer() { clearInterval(timerInterval); tick(); timerInterval = setInterval(tick, 1000); }
+function tick() {
+    const rem = Math.max(0, Math.round((endAt - Date.now()) / 1000));
+    $('timer-display').innerText = `${String(Math.floor(rem / 60)).padStart(2, '0')}:${String(rem % 60).padStart(2, '0')}`;
+    const urgent = rem <= 60;
+    $('timer-display').classList.toggle('bg-red-600', urgent); $('timer-display').classList.toggle('bg-blue-900', !urgent);
+    if (rem <= 0 && isQuizActive) finishQuiz(false);
+}
+
+// --- Simpan sesi agar refresh tidak menghapus jawaban ---
+const SES_KEY = 'ldks_session_v1';
+function saveSession(extra = {}) {
+    try { localStorage.setItem(SES_KEY, JSON.stringify({ exam, questions, answers: userAnswers, idx: currentIdx, endAt, warningsLeft, kkm: config.kkm, ...extra })); } catch (e) {}
+}
+function loadSession() { try { return JSON.parse(localStorage.getItem(SES_KEY) || 'null'); } catch (e) { return null; } }
+function clearSession() { try { localStorage.removeItem(SES_KEY); } catch (e) {} }
+
+function checkResume() {
+    const s = loadSession();
+    if (!s || !s.exam) return;
+    exam = s.exam; questions = s.questions || []; userAnswers = s.answers || [];
+    endAt = s.endAt; warningsLeft = s.warningsLeft; currentIdx = s.idx || 0; config.kkm = s.kkm || 70;
+    if (s.submitting) { pendingForce = !!s.paksa; showResultPage(); sendResult(); return; }
+    if (Date.now() >= endAt) { pendingForce = false; saveSession({ submitting: true, paksa: false }); showResultPage(); sendResult(); return; }
+    if (warningsLeft <= 0) { pendingForce = true; saveSession({ submitting: true, paksa: true }); showResultPage(); sendResult(); return; }
+    warningsLeft--; saveSession();
+    hideAllPages();
+    showModal('Ujian dilanjutkan', 'Halaman ujian sempat ditutup atau dimuat ulang, sehingga peringatan Anda terpakai. Pelanggaran berikutnya akan membuat ujian otomatis dikumpulkan.', {
+        type: 'danger', okText: 'Lanjutkan ujian',
+        onOk: async () => {
+            if (fsSupported) { try { await enterFullscreen(); } catch (e) {} }
+            lastViolation = Date.now(); violationLock = false;
+            beginQuiz(currentIdx);
+        }
+    });
+}
+
+// --- Selesai & kirim ke Supabase ---
+function showResultPage() {
+    hideAllPages();
+    $('result-page').classList.remove('hidden');
+    $('result-student-info').innerText = `${exam.nama} - ${exam.kelas}`;
+    $('final-score').innerText = '…';
+}
+function finishQuiz(isForce = false) {
+    if (!isQuizActive) return;
+    isQuizActive = false;
+    clearInterval(timerInterval);
+    leaveFullscreen();
+    pendingForce = !!isForce;
+    saveSession({ submitting: true, paksa: pendingForce });
+    showResultPage();
+    sendResult();
+}
+async function sendResult() {
+    $('result-status').innerText = 'Mengirim jawaban…';
+    $('btn-retry').classList.add('hidden');
+    try {
+        const r = await rpc('ldks_submit', { p_nama: exam.nama, p_kelas: exam.kelas, p_jawaban: userAnswers, p_paksa: pendingForce });
+        clearSession();
+        $('final-score').innerText = r.nilai;
+        $('result-status').innerText = pendingForce ? 'Disubmit paksa (pelanggaran sistem).' : `Benar ${r.benar} dari ${r.total} soal.`;
+    } catch (e) {
+        if (/sudah mengerjakan/i.test(e.message)) {
+            clearSession();
+            $('result-status').innerText = 'Anda sudah tercatat mengerjakan ujian ini.';
+        } else {
+            $('result-status').innerText = `Gagal mengirim: ${e.message}. Jangan tutup halaman ini, periksa koneksi lalu kirim ulang.`;
+            $('btn-retry').classList.remove('hidden');
+        }
+    }
+}
+
+// =====================================================================
+// 7. ANTI-CURANG
+// =====================================================================
+function setupAntiCheat() {
+    if (listenersReady) return;
+    listenersReady = true;
+    document.addEventListener('visibilitychange', () => { if (document.hidden) handleCheatAttempt(); });
+    window.addEventListener('blur', handleCheatAttempt);
+    const fsChange = () => { if (fsSupported && !isFullscreen() && isQuizActive) handleCheatAttempt(); };
+    document.addEventListener('fullscreenchange', fsChange);
+    document.addEventListener('webkitfullscreenchange', fsChange);
+    document.addEventListener('contextmenu', e => { if (isQuizActive) e.preventDefault(); });
+    document.addEventListener('copy', e => { if (isQuizActive) e.preventDefault(); });
+}
+// Satu kejadian (blur + visibility + fullscreen) hanya dihitung satu pelanggaran
+function handleCheatAttempt() {
+    if (!isQuizActive || violationLock) return;
+    const now = Date.now();
+    if (now - lastViolation < 2000) return;
+    lastViolation = now;
+    if (warningsLeft > 0) {
+        warningsLeft--;
+        violationLock = true;
+        saveSession();
+        showModal('PERINGATAN PELANGGARAN!',
+            'Sistem mendeteksi Anda meninggalkan layar ujian. Kembali ke layar ujian. Jika terulang, ujian akan OTOMATIS DIKUMPULKAN.',
+            { type: 'danger', okText: 'Kembali ke ujian', onOk: async () => {
+                if (fsSupported && !isFullscreen()) { try { await enterFullscreen(); } catch (e) {} }
+                lastViolation = Date.now(); violationLock = false;
+            } });
+    } else {
+        finishQuiz(true);
+        showModal('UJIAN DIBATALKAN', 'Anda melanggar aturan ujian (meninggalkan layar ujian). Jawaban Anda otomatis dikumpulkan.', { type: 'danger' });
+    }
+}
+
+// =====================================================================
+// 8. INISIALISASI
+// =====================================================================
+window.addEventListener('DOMContentLoaded', () => {
+    checkResume();
+});
+</script>
+</body>
+</html>
