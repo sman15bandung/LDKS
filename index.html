@@ -8,6 +8,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- SheetJS: baca & ekspor Excel -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- pdf.js: baca teks dari PDF soal -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
@@ -131,6 +133,29 @@
                 <div id="tab-soal" class="p-4 sm:p-6 flex-1 hidden flex-col overflow-y-auto">
                     <h3 class="text-xl font-bold mb-2">Kelola Data Soal (format JSON)</h3>
                     <p class="text-sm text-gray-500 mb-3">Setiap soal: <code>q</code> (pertanyaan), <code>opts</code> (2–5 pilihan), <code>ans</code> (nomor jawaban benar, mulai dari 0). Kunci jawaban tidak dikirim ke perangkat siswa.</p>
+                    <div class="mb-4 p-4 border rounded-lg bg-blue-50 border-blue-100">
+                        <h4 class="font-bold text-blue-800 mb-2">Upload soal dari PDF</h4>
+                        <p class="text-sm text-blue-600 mb-3">Soal dibaca otomatis dari PDF dan dimasukkan ke editor di bawah. Soal baru tersimpan setelah Anda klik "Simpan soal".</p>
+                        <input type="file" id="pdf-soal" accept="application/pdf,.pdf" onchange="handlePdfUpload(event)" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer">
+                        <label class="flex items-center gap-2 mt-3 text-sm text-blue-800 cursor-pointer"><input type="checkbox" id="chk-append-pdf"> Tambahkan ke soal yang sudah ada di editor (jangan timpa)</label>
+                        <details class="mt-3 text-sm text-blue-900">
+                            <summary class="cursor-pointer font-semibold">Format PDF yang didukung</summary>
+                            <p class="mt-2">PDF harus berisi teks (bukan hasil scan atau foto). Nomor soal diikuti titik, pilihan A–E, dan kunci jawaban ditulis setelah tiap soal atau dikumpulkan di akhir:</p>
+<pre class="mt-2 p-3 bg-white border rounded text-xs overflow-x-auto" style="user-select:text">1. Pertanyaan soal nomor satu ...
+A. Pilihan pertama
+B. Pilihan kedua
+C. Pilihan ketiga
+D. Pilihan keempat
+E. Pilihan kelima
+Kunci: C
+
+2. Pertanyaan berikutnya ...
+
+--- atau kunci dikumpulkan di akhir ---
+Kunci Jawaban
+1. C  2. A  3. B  4. D</pre>
+                        </details>
+                    </div>
                     <textarea id="editor-soal" class="admin-textarea flex-1 min-h-[300px] w-full p-4 border rounded-lg bg-gray-50 mb-4 focus:ring-2 focus:ring-blue-500 outline-none resize-none"></textarea>
                     <div class="flex flex-wrap gap-2">
                         <button onclick="saveQuestionsData()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg">Simpan soal</button>
@@ -574,6 +599,92 @@ async function saveQuestionsData() {
         const n = await withLoader(() => rpc('ldks_admin_save_soal', { p_pass: adminPass, p_soal: clean }));
         showModal('Berhasil', `${n} soal tersimpan.`, { type: 'success' });
     } catch (e) { showModal('Gagal menyimpan', e.message, { type: 'danger' }); }
+}
+
+// --- Upload soal dari PDF ---
+const PDFJS_VER = '3.11.174';
+async function extractPdfLines(file) {
+    if (!window.pdfjsLib) throw new Error('Library PDF belum termuat. Periksa koneksi internet lalu muat ulang halaman.');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VER}/pdf.worker.min.js`;
+    const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+    const lines = [];
+    for (let p = 1; p <= pdf.numPages; p++) {
+        const page = await pdf.getPage(p);
+        const content = await page.getTextContent();
+        let line = '', lastY = null;
+        for (const it of content.items) {
+            const y = it.transform[5];
+            if (lastY !== null && Math.abs(y - lastY) > 3) { if (line.trim()) lines.push(line.trim()); line = ''; }
+            line += it.str;
+            lastY = y;
+            if (it.hasEOL) { if (line.trim()) lines.push(line.trim()); line = ''; }
+        }
+        if (line.trim()) lines.push(line.trim());
+    }
+    return lines;
+}
+
+function parsePdfSoal(lines) {
+    const reQ = /^\s*(\d{1,3})\s*[.)]\s+(\S.*)$/;
+    const reOpt = /^\s*\(?([A-Ea-e])[.)]\s*(\S.*)$/;
+    const reAns = /^\s*(?:kunci(?:\s+jawaban)?|jawaban|jawab|answer)\s*[:=\-]?\s*\(?([A-Ea-e])\)?\.?\s*$/i;
+    const reKeyStart = /^\s*(?:kunci(?:\s+jawaban)?|jawaban)\s*:?\s*(\d.*)?$/i;
+    const reInline = /^\s*\(?[Aa][.)]\s+\S.*\s\(?[Bb][.)]\s/;
+    const items = []; let cur = null, lastOpt = null, keyText = '', inKey = false;
+
+    for (const raw of lines) {
+        const line = raw.replace(/\s+/g, ' ').trim();
+        if (!line) continue;
+        if (inKey) { keyText += ' ' + line; continue; }
+        let m;
+        if (cur && (m = line.match(reAns))) { cur.ans = m[1].toUpperCase().charCodeAt(0) - 65; continue; }
+        if ((m = line.match(reKeyStart))) { inKey = true; keyText += ' ' + (m[1] || ''); continue; }
+        const segs = reInline.test(line) ? line.split(/\s(?=\(?[B-Eb-e][.)]\s)/) : [line];
+        for (const seg of segs) {
+            const mq = seg.match(reQ), mo = seg.match(reOpt);
+            if (mq) { cur = { no: Number(mq[1]), q: mq[2], opts: [], ans: null }; items.push(cur); lastOpt = null; continue; }
+            if (!cur) continue;
+            const expected = String.fromCharCode(65 + cur.opts.length);
+            if (mo && mo[1].toUpperCase() === expected) { cur.opts.push(mo[2]); lastOpt = cur.opts.length - 1; continue; }
+            if (lastOpt !== null) cur.opts[lastOpt] += ' ' + seg; else cur.q += ' ' + seg;
+        }
+    }
+
+    const keyMap = {};
+    for (const k of keyText.matchAll(/(\d{1,3})\s*[.)\:\-–]?\s*([A-Ea-e])(?![A-Za-z])/g)) keyMap[Number(k[1])] = k[2].toUpperCase().charCodeAt(0) - 65;
+
+    const soal = [], skipped = [], noKey = [];
+    for (const it of items) {
+        if (it.opts.length < 2) { skipped.push(it.no); continue; }
+        let ans = it.ans ?? keyMap[it.no];
+        if (ans === undefined || ans === null || ans >= it.opts.length) { noKey.push(it.no); ans = 0; }
+        soal.push({ q: it.q.trim(), opts: it.opts.map(o => o.trim()), ans });
+    }
+    return { soal, skipped, noKey };
+}
+
+async function handlePdfUpload(event) {
+    const file = event.target.files[0]; if (!file) return;
+    try {
+        const res = await withLoader(async () => parsePdfSoal(await extractPdfLines(file)));
+        event.target.value = '';
+        const { soal, skipped, noKey } = res;
+        if (!soal.length) {
+            return showModal('Soal tidak terbaca', 'Tidak ada soal yang dikenali. Pastikan PDF berupa teks (bukan hasil scan/foto) dan formatnya sesuai contoh pada "Format PDF yang didukung".', { type: 'danger' });
+        }
+        let current = [];
+        if ($('chk-append-pdf').checked) {
+            try { current = JSON.parse($('editor-soal').value); if (!Array.isArray(current)) current = []; } catch (e) { current = []; }
+        }
+        $('editor-soal').value = JSON.stringify([...current, ...soal], null, 2);
+        let msg = `${soal.length} soal terbaca dan dimasukkan ke editor. Soal BELUM tersimpan: periksa dulu, lalu klik "Simpan soal".`;
+        if (noKey.length) msg += `\n\nKunci jawaban tidak ditemukan untuk nomor ${noKey.join(', ')} (sementara diisi A). Wajib diperiksa dan diperbaiki di kolom "ans".`;
+        if (skipped.length) msg += `\n\nNomor ${skipped.join(', ')} dilewati karena pilihan jawabannya tidak terbaca.`;
+        showModal('PDF dibaca', msg, { type: (noKey.length || skipped.length) ? 'warn' : 'success' });
+    } catch (e) {
+        event.target.value = '';
+        showModal('Gagal membaca PDF', e.message || 'File PDF tidak dapat dibaca.', { type: 'danger' });
+    }
 }
 
 // --- Pengaturan ---
